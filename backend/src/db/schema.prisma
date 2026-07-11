@@ -1,0 +1,72 @@
+// Prisma schema for the Salary Management System
+// Design decision: SalaryRecord is append-only history, not a mutable field on
+// Employee. "Current salary" = the SalaryRecord with the latest effectiveDate
+// for a given employee. This preserves audit history and lets analytics
+// answer questions like "how has average pay in Engineering changed over time"
+// without needing a separate audit log table.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum Level {
+  L1
+  L2
+  L3
+  L4
+  L5
+  L6
+  MANAGER
+  DIRECTOR
+}
+
+model Employee {
+  id               String           @id @default(uuid())
+  employeeCode     String           @unique // human-readable ID, e.g. EMP-000123
+  firstName        String
+  lastName         String
+  email            String           @unique
+  department        String
+  jobTitle         String
+  level            Level
+  country          String           // ISO country name, e.g. "India", "United States"
+  countryCode      String           // ISO 3166-1 alpha-2, e.g. "IN", "US"
+  employmentStatus EmploymentStatus @default(ACTIVE)
+  hireDate         DateTime
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  salaryRecords SalaryRecord[]
+
+  // Indexes to keep list/filter/aggregate queries fast at 10k+ rows
+  @@index([department])
+  @@index([country])
+  @@index([level])
+  @@index([employmentStatus])
+  @@index([department, country])
+}
+
+model SalaryRecord {
+  id            String   @id @default(uuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount        Float    // stored in minor-unit-free decimal form, e.g. 85000.00
+  currency      String   // ISO 4217, e.g. "USD", "INR" — no cross-currency conversion is performed
+  effectiveDate DateTime
+  reason        String?  // e.g. "Initial hire", "Annual raise", "Promotion"
+  createdAt     DateTime @default(now())
+
+  @@index([employeeId, effectiveDate])
+  @@index([effectiveDate])
+}
